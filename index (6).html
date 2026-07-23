@@ -1,0 +1,1450 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>벨빈 팀 역할 진단 - 우리 팀에서 나는 어떤 세포일까?</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/react-is@18/umd/react-is.production.min.js"></script>
+  <script src="https://unpkg.com/prop-types/prop-types.min.js"></script>
+  <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
+  <script src="https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0F0C29; }
+    #error-box { display:none; color:#fff; background:#B91C1C; padding:16px; font-family:monospace; white-space:pre-wrap; }
+  </style>
+</head>
+<body>
+  <div id="error-box"></div>
+  <div id="root"></div>
+  <script>
+    window.onerror = function(msg, url, line, col, err) {
+      var box = document.getElementById('error-box');
+      box.style.display = 'block';
+      box.textContent = '오류: ' + msg + '\n(line ' + line + ')';
+    };
+  </script>
+  <script type="text/babel">
+    const { useState, useMemo } = React;
+    const { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer, PolarRadiusAxis, PieChart, Pie, Cell } = Recharts;
+
+
+const TEAM_API_URL = "https://script.google.com/macros/s/AKfycbzM1Tqc9FhmritqA_8j31dHAhmzuZUv19kEN-srCvgXVZ1SBD-pnejHy0JArMTTx0gicA/exec";
+
+const CHAR_IMAGES = {
+  "A": "https://raw.githubusercontent.com/seojijiwon-gif/belbin-diagnosis/main/1.png",
+  "B": "https://raw.githubusercontent.com/seojijiwon-gif/belbin-diagnosis/main/2.png",
+  "C": "https://raw.githubusercontent.com/seojijiwon-gif/belbin-diagnosis/main/3.png",
+  "D": "https://raw.githubusercontent.com/seojijiwon-gif/belbin-diagnosis/main/6.png",
+  "E": "https://raw.githubusercontent.com/seojijiwon-gif/belbin-diagnosis/main/4.png",
+  "F": "https://raw.githubusercontent.com/seojijiwon-gif/belbin-diagnosis/main/5.png",
+  "G": "https://raw.githubusercontent.com/seojijiwon-gif/belbin-diagnosis/main/7.png",
+  "H": "https://raw.githubusercontent.com/seojijiwon-gif/belbin-diagnosis/main/8.png",
+  "I": "https://raw.githubusercontent.com/seojijiwon-gif/belbin-diagnosis/main/9.png",
+};
+
+const ROLES = [
+  {
+    id: "A", name: "창조자", en: "Plant", emoji: "🌱", color: "#7C3AED",
+    tagline: "아무도 보지 못한 곳을 먼저 봅니다",
+    description: "막힌 상황에서 독창적인 시각으로 돌파구를 만드는 사람. 팀의 영감과 가능성의 원천이며, 기존 틀을 흔드는 데 망설임이 없습니다.",
+    strengths: ["아무도 시도하지 않은 접근법으로 문제를 새롭게 정의한다", "팀이 막혔을 때 새로운 에너지와 방향을 제시한다", "영감과 가능성의 씨앗을 팀에 심는 역할을 한다"],
+    growth: ["아이디어를 실행 가능한 형태로 다듬는 연습을 쌓아보기", "팀과 충분히 공유하지 않고 혼자 몰입하는 순간 알아차리기"],
+    synergy: [
+      { id: "B", reason: "창조자의 아이디어를 논리적으로 검증해 실현 가능성을 높여준다" },
+      { id: "E", reason: "아이디어를 구체적인 실행 계획으로 전환해 현실로 만들어준다" },
+      { id: "I", reason: "외부 자극과 새로운 정보를 더해 발상을 더욱 풍부하게 만든다" },
+    ],
+  },
+  {
+    id: "B", name: "분석가", en: "Monitor Evaluator", emoji: "🔍", color: "#0369A1",
+    tagline: "놓치는 것 없이 꼼꼼히 살핍니다",
+    description: "감정이 아닌 논리로 판단하며, 팀이 잘못된 방향으로 흐르기 전에 제동을 거는 사람. 팀의 냉철한 균형추입니다.",
+    strengths: ["냉정하고 객관적인 판단으로 팀의 리스크를 사전에 줄인다", "다양한 선택지의 장단점을 명확하게 정리한다", "팀이 흥분했을 때 이성적인 균형추가 된다"],
+    growth: ["분석에 너무 오래 머물지 않도록 '결단의 시점' 스스로 인식하기", "비판적 의견이 팀의 열의를 꺾지 않도록 전달 방식 다듬기"],
+    synergy: [
+      { id: "A", reason: "분석가가 놓칠 수 있는 새로운 시각과 가능성을 제공해준다" },
+      { id: "D", reason: "분석이 끝난 후 실행을 주저할 때 강한 추진력으로 앞으로 나아가게 한다" },
+      { id: "G", reason: "분석 결과를 팀 전체 방향과 연결해 더 넓은 시야를 갖게 해준다" },
+    ],
+  },
+  {
+    id: "C", name: "전문가", en: "Specialist", emoji: "🔬", color: "#047857",
+    tagline: "깊이가 곧 신뢰입니다",
+    description: "특정 분야에 대한 깊은 지식으로 팀에 전문성을 더하고, 결과물의 품질 기준을 높이는 사람.",
+    strengths: ["팀이 필요로 하는 전문 지식을 신뢰 있게 제공한다", "해당 분야에서 높은 집중력과 품질을 보장한다", "근거 기반의 의사결정에 핵심 기여를 한다"],
+    growth: ["전문 영역 밖에서도 협업에 적극적으로 참여해보기", "세부보다 전체 맥락에서 나의 역할 의미 찾기"],
+    synergy: [
+      { id: "G", reason: "전문가의 깊은 지식을 팀 전체 맥락에 효과적으로 연결해준다" },
+      { id: "B", reason: "전문 지식을 객관적으로 검토해 다른 관점과 균형을 맞춰준다" },
+      { id: "F", reason: "전문가가 만든 결과물을 꼼꼼히 마무리해 완성도를 높여준다" },
+    ],
+  },
+  {
+    id: "D", name: "추진자", en: "Shaper", emoji: "⚡", color: "#B45309",
+    tagline: "멈추지 않고 앞으로 나아갑니다",
+    description: "장애물을 두려워하지 않고, 팀에 긴장감과 에너지를 불어넣는 사람. 도전적인 상황에서 더 강해집니다.",
+    strengths: ["팀이 느슨해질 때 분위기를 전환하고 추진력을 만든다", "난관에도 결과를 향해 끝까지 밀어붙인다", "도전적인 상황에서 오히려 빛을 발한다"],
+    growth: ["빠른 추진 속도 속에서 팀원의 감정과 상황 살피기", "강한 주장이 갈등으로 번지지 않도록 전달 방식 점검하기"],
+    synergy: [
+      { id: "H", reason: "강한 추진력으로 생긴 팀 내 긴장을 부드럽게 풀어 관계를 지켜준다" },
+      { id: "F", reason: "빠르게 추진된 일의 디테일을 꼼꼼히 챙겨 완성도를 보완해준다" },
+      { id: "B", reason: "추진 방향이 옳은지 냉정하게 검토해 잘못된 질주를 사전에 막아준다" },
+    ],
+  },
+  {
+    id: "E", name: "실행자", en: "Implementer", emoji: "🔧", color: "#DC2626",
+    tagline: "계획을 현실로 바꾸는 사람입니다",
+    description: "아이디어를 구체적인 행동으로 체계화하고, 일관되게 실행하는 팀의 기반. 가장 신뢰할 수 있는 실행의 축입니다.",
+    strengths: ["계획을 단계별로 명확하게 실행에 옮긴다", "역할과 절차가 명확할 때 최고의 성과를 낸다", "팀의 신뢰할 수 있는 실행 기반이 된다"],
+    growth: ["새로운 방식에 좀 더 열린 자세로 접근해보기", "변화 속에서도 유연하게 실행 계획을 조정하는 연습"],
+    synergy: [
+      { id: "A", reason: "실행자가 부족할 수 있는 새로운 아이디어와 방향을 열어준다" },
+      { id: "I", reason: "실행에 필요한 외부 자원과 기회를 연결해 실행을 더 원활하게 만든다" },
+      { id: "G", reason: "실행 업무를 팀 전체 목표와 연결해 우선순위를 명확하게 해준다" },
+    ],
+  },
+  {
+    id: "F", name: "완결자", en: "Completer Finisher", emoji: "✅", color: "#9D174D",
+    tagline: "끝까지 놓지 않아야 완성입니다",
+    description: "마감과 완성도에 민감하게 반응하며, 팀의 결과물을 한 단계 더 높이는 사람. 마지막 1%를 책임집니다.",
+    strengths: ["오류와 누락 없는 완성도 높은 결과물을 만든다", "마감 기한과 품질 기준을 확실히 지킨다", "팀의 마지막 1%를 끝까지 책임진다"],
+    growth: ["완벽을 추구하다 전체 흐름을 놓치지 않도록 균형 잡기", "일부 작업은 믿고 맡기는 위임 연습하기"],
+    synergy: [
+      { id: "D", reason: "완결자가 디테일에 머물 때 전체 속도와 방향을 잃지 않게 끌어준다" },
+      { id: "E", reason: "체계적 실행으로 완결자가 마무리에만 집중할 수 있는 환경을 만든다" },
+      { id: "C", reason: "완결자가 점검하는 내용에 전문적 깊이를 더해 품질을 높여준다" },
+    ],
+  },
+  {
+    id: "G", name: "조정자", en: "Coordinator", emoji: "🧭", color: "#4338CA",
+    tagline: "모두의 강점을 하나로 모읍니다",
+    description: "팀의 목표를 중심에 두고, 각 구성원의 역할과 방향을 조율하는 팀의 중심축. 전체를 조망하는 시선을 가집니다.",
+    strengths: ["팀원 각자의 강점을 파악하고 역할을 잘 배분한다", "다양한 의견을 수렴해 팀의 방향을 정리한다", "갈등 속에서도 팀의 목표를 놓치지 않는다"],
+    growth: ["직접 실행하는 역할도 균형 있게 담당해보기", "결정을 지연하지 않도록 '충분히 들었다'는 기준 세우기"],
+    synergy: [
+      { id: "D", reason: "조정자가 조율에 집중할 때 실행의 속도와 동력을 제공해준다" },
+      { id: "E", reason: "조정자의 방향 설정을 구체적 행동으로 착실하게 옮겨준다" },
+      { id: "C", reason: "의사결정 시 전문적 근거를 제공해 조정자의 판단을 탄탄하게 해준다" },
+    ],
+  },
+  {
+    id: "H", name: "조화자", en: "Teamworker", emoji: "🤝", color: "#0F766E",
+    tagline: "팀이 함께 숨 쉬게 합니다",
+    description: "갈등을 부드럽게 풀고, 팀 안에 심리적 안전감을 만드는 사람. 팀의 결속력을 조용히 지탱합니다.",
+    strengths: ["팀 내 갈등을 완화하고 협력 분위기를 조성한다", "구성원의 감정과 상황을 잘 이해하고 배려한다", "팀의 결속력과 신뢰를 높이는 존재"],
+    growth: ["갈등 상황에서 자신의 입장도 명확하게 표현하는 연습", "타인의 기대에 과도하게 맞추다 나를 잃지 않도록 주의하기"],
+    synergy: [
+      { id: "D", reason: "팀 갈등이 해소된 후 목표를 향해 다시 집중하도록 에너지를 불어넣는다" },
+      { id: "G", reason: "팀 분위기와 팀 목표 사이의 균형을 함께 만들어준다" },
+      { id: "A", reason: "심리적 안전감 속에서 창조자가 아이디어를 더 자유롭게 펼치도록 돕는다" },
+    ],
+  },
+  {
+    id: "I", name: "자원탐색가", en: "Resource Investigator", emoji: "🌐", color: "#C2410C",
+    tagline: "밖에서 가능성을 찾아옵니다",
+    description: "외부 네트워크를 통해 새로운 기회와 자원을 팀에 연결하는 사람. 팀의 시야를 밖으로 넓혀줍니다.",
+    strengths: ["외부 네트워크를 통해 새로운 기회를 적극적으로 발굴한다", "초면에도 빠르게 관계를 형성하는 뛰어난 사교성", "팀에 신선한 아이디어와 자극을 가져온다"],
+    growth: ["초반 열정이 지속될 수 있도록 팔로우업 습관 만들기", "넓은 관심을 하나씩 깊이 있게 연결하는 연습"],
+    synergy: [
+      { id: "F", reason: "자원탐색가가 발굴한 기회를 놓치지 않고 끝까지 마무리해준다" },
+      { id: "E", reason: "외부에서 가져온 자원을 체계적으로 실행에 연결시켜준다" },
+      { id: "B", reason: "넓은 관심 중 실제 가치 있는 것을 선별하고 검증해준다" },
+    ],
+  },
+];
+
+const QUESTIONS = [
+  { role: "A", text: "기존 방식에 의문을 품고, 아무도 생각하지 못한 접근법을 떠올리는 경우가 많다" },
+  { role: "A", text: "팀이 막혔을 때 독창적인 아이디어로 돌파구를 제시하는 역할을 한다" },
+  { role: "A", text: "문제를 남들과 다른 각도로 바라보는 것을 즐긴다" },
+  { role: "A", text: "실용성보다 새로운 가능성을 먼저 탐색하는 편이다" },
+  { role: "B", text: "결정을 내리기 전 장단점을 꼼꼼히 따져보는 편이다" },
+  { role: "B", text: "팀의 아이디어나 계획에 대해 비판적으로 검토하는 것을 망설이지 않는다" },
+  { role: "B", text: "감정보다 논리와 근거를 기반으로 판단하는 편이다" },
+  { role: "B", text: "서두르기보다 충분히 분석한 후 의견을 제시하는 편이다" },
+  { role: "C", text: "특정 분야에 대해 깊이 있는 지식과 기술을 보유하고 있다" },
+  { role: "C", text: "내 전문 영역 안에서는 높은 집중력과 성과를 발휘한다" },
+  { role: "C", text: "특정 주제나 업무에 끝까지 파고드는 것을 즐긴다" },
+  { role: "C", text: "팀에서 내 전문성이 필요한 순간에 기여할 때 가장 큰 보람을 느낀다" },
+  { role: "D", text: "팀이 느슨해지거나 방향을 잃었을 때 분위기를 전환하는 역할을 한다" },
+  { role: "D", text: "장애물이 생겨도 방법을 찾아 끝까지 밀어붙이는 편이다" },
+  { role: "D", text: "도전적인 상황일수록 오히려 에너지가 생긴다" },
+  { role: "D", text: "결과를 위해 갈등이나 압박도 감수할 수 있다" },
+  { role: "E", text: "계획을 구체적인 행동 단계로 체계적으로 옮기는 것을 잘한다" },
+  { role: "E", text: "역할과 절차가 명확할 때 가장 높은 성과를 낸다" },
+  { role: "E", text: "맡은 일을 일관성 있게 끝까지 완수한다" },
+  { role: "E", text: "현실적이고 효율적인 방식으로 일하는 것을 선호한다" },
+  { role: "F", text: "마감 기한과 세부 사항에 각별히 신경 쓰는 편이다" },
+  { role: "F", text: "완성도가 충분하지 않으면 쉽게 넘기지 못하는 성향이 있다" },
+  { role: "F", text: "오류나 누락이 없는지 끝까지 점검하고 확인한다" },
+  { role: "F", text: "완료되지 않은 일이 있으면 마음에 걸려 계속 신경 쓰인다" },
+  { role: "G", text: "팀 구성원 각자의 강점을 파악하고 적절히 역할을 배분하는 편이다" },
+  { role: "G", text: "회의나 토론에서 다양한 의견을 수렴해 방향을 정리하는 역할을 맡곤 한다" },
+  { role: "G", text: "팀 전체의 목표를 항상 염두에 두고 행동한다" },
+  { role: "G", text: "갈등 상황에서 중립적 입장으로 조율하는 것을 잘한다" },
+  { role: "H", text: "팀 내 갈등이 생기면 관계를 부드럽게 유지하려고 노력한다" },
+  { role: "H", text: "다른 사람의 감정과 입장을 잘 이해하고 배려하는 편이다" },
+  { role: "H", text: "팀의 분위기가 좋아야 일도 잘 된다고 생각한다" },
+  { role: "H", text: "도움이 필요한 동료가 있으면 내 일을 잠시 미루고 지원하는 편이다" },
+  { role: "I", text: "외부 네트워크를 통해 새로운 기회나 정보를 찾아오는 것을 즐긴다" },
+  { role: "I", text: "처음 만나는 사람과도 빠르게 친해지고 관계를 형성하는 편이다" },
+  { role: "I", text: "팀에 필요한 외부 자원이나 협력 파트너를 발굴하는 역할을 한다" },
+  { role: "I", text: "새로운 것에 대한 관심이 높고 트렌드에 민감한 편이다" },
+];
+
+// 문항 셔플 (컴포넌트 외부에서 한 번만 실행)
+function shuffleArray(arr) {
+  const a = arr.map((item, originalIndex) => ({ ...item, originalIndex }));
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function BelbinDiagnosis() {
+  const [page, setPage] = useState("intro");
+  const [currentIdx, setCurrentIdx] = useState(0);
+  const [answers, setAnswers] = useState({});
+  const [shuffledQuestions, setShuffledQuestions] = useState([]);
+  const [teamCode, setTeamCode] = useState("");
+  const [userName, setUserName] = useState("");
+  const [submitStatus, setSubmitStatus] = useState("idle"); // idle | saving | saved | error
+  const submittedRef = React.useRef(false);
+  const [teamLookupCode, setTeamLookupCode] = useState("");
+  const [teamResults, setTeamResults] = useState(null);
+  const [teamLoading, setTeamLoading] = useState(false);
+  const [teamError, setTeamError] = useState("");
+  const [expandedMember, setExpandedMember] = useState(null);
+  const reportRef = React.useRef(null);
+  const [isExporting, setIsExporting] = useState(false);
+
+  const totalQ = QUESTIONS.length;
+
+  const goToTeamEntry = () => {
+    setPage("team-entry");
+    window.scrollTo(0, 0);
+  };
+
+  const startQuiz = () => {
+    setShuffledQuestions(shuffleArray(QUESTIONS));
+    setCurrentIdx(0);
+    setAnswers({});
+    submittedRef.current = false;
+    setSubmitStatus("idle");
+    setPage("quiz");
+    window.scrollTo(0, 0);
+  };
+
+  const currentQ = shuffledQuestions[currentIdx];
+  const currentAnswered = currentQ !== undefined && answers[currentIdx] !== undefined;
+
+  const handleAnswer = (score) => {
+    setAnswers(prev => ({ ...prev, [currentIdx]: score }));
+    setTimeout(() => {
+      if (currentIdx < totalQ - 1) {
+        setCurrentIdx(prev => prev + 1);
+        window.scrollTo(0, 0);
+      } else {
+        setPage("result");
+        window.scrollTo(0, 0);
+      }
+    }, 250);
+  };
+
+  const handleNext = () => {
+    if (currentIdx < totalQ - 1) {
+      setCurrentIdx(prev => prev + 1);
+      window.scrollTo(0, 0);
+    } else {
+      setPage("result");
+      window.scrollTo(0, 0);
+    }
+  };
+
+  const handlePrev = () => {
+    if (currentIdx > 0) {
+      setCurrentIdx(prev => prev - 1);
+      window.scrollTo(0, 0);
+    }
+  };
+
+  const scores = useMemo(() => {
+    return ROLES.map((role) => {
+      const total = shuffledQuestions.reduce((sum, q, i) => {
+        if (q.role === role.id) return sum + (answers[i] || 0);
+        return sum;
+      }, 0);
+      return { ...role, score: total };
+    });
+  }, [answers, shuffledQuestions]);
+
+  const [activeRoleIdx, setActiveRoleIdx] = useState(0);
+
+  const sortedScores = [...scores].sort((a, b) => b.score - a.score);
+  const maxScore = sortedScores[0]?.score ?? 0;
+  const primaryRoles = sortedScores.filter(s => s.score === maxScore);
+  const isMultiple = primaryRoles.length > 1;
+  const activeRole = primaryRoles[Math.min(activeRoleIdx, primaryRoles.length - 1)];
+
+  const radarData = ROLES.map(role => {
+    const s = scores.find(s => s.id === role.id);
+    return { role: role.name, 점수: s.score, fullMark: 20 };
+  });
+
+  const getSynergyRoles = (synergy) => synergy.map(({ id, reason }) => ({ ...ROLES.find(r => r.id === id), reason })).filter(r => r.id);
+
+  const resetAll = () => {
+    setPage("intro");
+    setCurrentIdx(0);
+    setAnswers({});
+    setShuffledQuestions([]);
+    setTeamCode("");
+    setUserName("");
+  };
+
+  const fetchTeamResults = (code) => {
+    const c = (code || "").trim();
+    if (!c) return;
+    setTeamLoading(true);
+    setTeamError("");
+    setTeamResults(null);
+    setTeamLookupCode(c);
+    setExpandedMember(null);
+    fetch(`${TEAM_API_URL}?teamCode=${encodeURIComponent(c)}`)
+      .then(res => res.json())
+      .then(data => { setTeamResults(Array.isArray(data) ? data : []); setTeamLoading(false); })
+      .catch(() => { setTeamError("불러오는 중 문제가 발생했어요. 잠시 후 다시 시도해주세요."); setTeamLoading(false); });
+  };
+
+  const goToReport = () => {
+    setPage("report");
+    window.scrollTo(0, 0);
+    if (teamCode.trim()) fetchTeamResults(teamCode);
+  };
+
+  const saveAsImage = () => {
+    if (!reportRef.current || isExporting) return;
+    setIsExporting(true);
+    html2canvas(reportRef.current, { backgroundColor: "#ffffff", scale: 2, useCORS: true })
+      .then(canvas => {
+        const link = document.createElement("a");
+        link.download = `벨빈진단_${userName || "결과"}.png`;
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+        setIsExporting(false);
+      })
+      .catch(() => setIsExporting(false));
+  };
+
+  const saveAsPDF = () => {
+    if (!reportRef.current || isExporting) return;
+    setIsExporting(true);
+    html2canvas(reportRef.current, { backgroundColor: "#ffffff", scale: 2, useCORS: true })
+      .then(canvas => {
+        const imgData = canvas.toDataURL("image/png");
+        const pdf = new window.jspdf.jsPDF("p", "mm", "a4");
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+        let heightLeft = pdfHeight;
+        let position = 0;
+        pdf.addImage(imgData, "PNG", 0, position, pdfWidth, pdfHeight);
+        heightLeft -= pdf.internal.pageSize.getHeight();
+        while (heightLeft > 0) {
+          position = heightLeft - pdfHeight;
+          pdf.addPage();
+          pdf.addImage(imgData, "PNG", 0, position, pdfWidth, pdfHeight);
+          heightLeft -= pdf.internal.pageSize.getHeight();
+        }
+        pdf.save(`벨빈진단_${userName || "결과"}.pdf`);
+        setIsExporting(false);
+      })
+      .catch(() => setIsExporting(false));
+  };
+
+  // 결과 화면에 진입하면 자동으로 시트에 1회 저장
+  React.useEffect(() => {
+    if (page === "result" && !submittedRef.current && teamCode.trim() && userName.trim()) {
+      submittedRef.current = true;
+      setSubmitStatus("saving");
+      const payload = {
+        teamCode: teamCode.trim(),
+        name: userName.trim(),
+        primaryRoles: primaryRoles.map(r => r.name),
+        scores: Object.fromEntries(scores.map(s => [s.id, s.score])),
+      };
+      fetch(TEAM_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify(payload),
+      })
+        .then(() => setSubmitStatus("saved"))
+        .catch(() => setSubmitStatus("error"));
+    }
+  }, [page]);
+
+  // ─── INTRO ───────────────────────────────────────────────────
+  if (page === "intro") {
+    const ROLE_ORDER = ["A","B","C","D","E","F","G","H","I"];
+    return (
+      <div style={{
+        minHeight: "100vh",
+        background: "linear-gradient(160deg, #0F0C29 0%, #1E1B4B 40%, #312E81 100%)",
+        display: "flex", flexDirection: "column", alignItems: "center",
+        fontFamily: "'Pretendard', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif",
+        overflowX: "hidden",
+      }}>
+        {/* 상단 타이틀 */}
+        <div style={{ textAlign: "center", paddingTop: 44, paddingBottom: 20, paddingLeft: 24, paddingRight: 24 }}>
+          <div style={{
+            fontSize: 38, fontWeight: 900, lineHeight: 1, letterSpacing: 2,
+            background: "linear-gradient(180deg, #ffffff 0%, #C7D2FE 50%, #818CF8 100%)",
+            WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
+            filter: "drop-shadow(0px 3px 0px rgba(67,56,202,0.9)) drop-shadow(0px 6px 14px rgba(0,0,0,0.5))",
+            transform: "perspective(300px) rotateX(8deg)",
+            display: "inline-block", marginBottom: 16,
+          }}>One Team</div>
+          <h1 style={{ color: "#fff", fontSize: 26, fontWeight: 800, lineHeight: 1.35, marginBottom: 8 }}>
+            우리 팀에서 나는<br />어떤 세포일까?
+          </h1>
+          <p style={{ color: "#A5B4FC", fontSize: 13, lineHeight: 1.7 }}>
+            벨빈의 9가지 팀 역할 이론으로 나를 발견해보세요
+          </p>
+        </div>
+
+        {/* 3×3 캐릭터 그리드 */}
+        <div style={{
+          display: "grid", gridTemplateColumns: "repeat(3, 1fr)",
+          gap: 3, width: "100%", maxWidth: 480,
+          padding: "0 3px", marginBottom: 4,
+        }}>
+          {ROLE_ORDER.map((id, i) => {
+            const role = ROLES.find(r => r.id === id);
+            const corners = { 0: "16px 0 0 0", 2: "0 16px 0 0", 6: "0 0 0 16px", 8: "0 0 16px 0" };
+            return (
+              <div key={id} style={{
+                position: "relative", aspectRatio: "1/1", overflow: "hidden",
+                background: `linear-gradient(135deg, ${role.color}44, ${role.color}22)`,
+                borderRadius: corners[i] || 0,
+              }}>
+                {CHAR_IMAGES[id] && (
+                  <img
+                    src={CHAR_IMAGES[id]}
+                    alt={role.name}
+                    style={{
+                      width: "92%", height: "92%",
+                      objectFit: "contain",
+                      position: "absolute", bottom: 0, left: "50%",
+                      transform: "translateX(-50%)",
+                      filter: "drop-shadow(0 4px 8px rgba(0,0,0,0.3))",
+                    }}
+                  />
+                )}
+                <div style={{
+                  position: "absolute", bottom: 0, left: 0, right: 0,
+                  background: "linear-gradient(transparent, rgba(0,0,0,0.6))",
+                  padding: "14px 6px 7px",
+                  textAlign: "center",
+                }}>
+                  <span style={{ color: "#fff", fontSize: 11, fontWeight: 700 }}>{role.name}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* 하단 정보 + 버튼 */}
+        <div style={{ textAlign: "center", padding: "20px 24px 48px", width: "100%", maxWidth: 480 }}>
+          <div style={{ display: "flex", justifyContent: "center", gap: 24, marginBottom: 28 }}>
+            {[["⏳", "약 10분"], ["📋", "36문항"], ["🔍", "9가지 유형"]].map(([icon, label]) => (
+              <div key={label} style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 20, marginBottom: 4 }}>{icon}</div>
+                <div style={{ color: "#A5B4FC", fontSize: 11 }}>{label}</div>
+              </div>
+            ))}
+          </div>
+          <button
+            onClick={goToTeamEntry}
+            style={{
+              width: "100%", background: "#fff", color: "#3730A3",
+              border: "none", borderRadius: 14,
+              padding: "16px", fontSize: 16, fontWeight: 700,
+              cursor: "pointer", letterSpacing: 0.5,
+              boxShadow: "0 4px 24px rgba(0,0,0,0.3)",
+              transition: "transform 0.15s",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.transform = "scale(1.02)"; }}
+            onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; }}
+          >
+            진단 시작하기 →
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── QUIZ ────────────────────────────────────────────────────
+  if (page === "team-entry") {
+    const canStart = teamCode.trim().length > 0 && userName.trim().length > 0;
+    return (
+      <div style={{
+        minHeight: "100vh",
+        background: "linear-gradient(160deg, #0F0C29 0%, #1E1B4B 40%, #312E81 100%)",
+        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+        fontFamily: "'Pretendard', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif",
+        padding: "24px",
+      }}>
+        <div style={{ width: "100%", maxWidth: 380 }}>
+          <p style={{ color: "#A5B4FC", fontSize: 12, letterSpacing: 2, textTransform: "uppercase", textAlign: "center", marginBottom: 10 }}>
+            팀 진단 시작하기
+          </p>
+          <h1 style={{ color: "#fff", fontSize: 22, fontWeight: 800, textAlign: "center", marginBottom: 28, lineHeight: 1.4 }}>
+            팀 코드와 이름을<br />입력해주세요
+          </h1>
+
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ color: "#C7D2FE", fontSize: 13, fontWeight: 600, marginBottom: 6, display: "block" }}>
+              팀 코드
+            </label>
+            <input
+              value={teamCode}
+              onChange={e => setTeamCode(e.target.value)}
+              placeholder="예: A팀, TEAM01"
+              style={{
+                width: "100%", padding: "14px 16px", borderRadius: 12,
+                border: "1.5px solid #4338CA", background: "rgba(255,255,255,0.08)",
+                color: "#fff", fontSize: 15, outline: "none",
+              }}
+            />
+            <p style={{ color: "#8B92C9", fontSize: 11, marginTop: 6 }}>
+              진행자가 안내한 팀 코드를 팀원 모두 동일하게 입력해주세요
+            </p>
+          </div>
+
+          <div style={{ marginBottom: 28 }}>
+            <label style={{ color: "#C7D2FE", fontSize: 13, fontWeight: 600, marginBottom: 6, display: "block" }}>
+              이름
+            </label>
+            <input
+              value={userName}
+              onChange={e => setUserName(e.target.value)}
+              placeholder="이름을 입력하세요"
+              style={{
+                width: "100%", padding: "14px 16px", borderRadius: 12,
+                border: "1.5px solid #4338CA", background: "rgba(255,255,255,0.08)",
+                color: "#fff", fontSize: 15, outline: "none",
+              }}
+            />
+          </div>
+
+          <button
+            onClick={startQuiz}
+            disabled={!canStart}
+            style={{
+              width: "100%", background: canStart ? "#fff" : "rgba(255,255,255,0.25)",
+              color: canStart ? "#3730A3" : "rgba(255,255,255,0.5)",
+              border: "none", borderRadius: 14,
+              padding: "16px", fontSize: 16, fontWeight: 700,
+              cursor: canStart ? "pointer" : "not-allowed", letterSpacing: 0.5,
+              boxShadow: canStart ? "0 4px 24px rgba(0,0,0,0.3)" : "none",
+              transition: "all 0.2s",
+            }}
+          >
+            진단 시작하기 →
+          </button>
+
+          <button
+            onClick={() => setPage("team-result")}
+            style={{
+              width: "100%", background: "transparent", color: "#A5B4FC",
+              border: "none", padding: "16px", fontSize: 13,
+              cursor: "pointer", marginTop: 8, textDecoration: "underline",
+            }}
+          >
+            우리 팀 결과만 보러 가기 →
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (page === "quiz" && currentQ) {
+    const progressPct = ((currentIdx + 1) / totalQ) * 100;
+    const selected = answers[currentIdx];
+    const ACCENT = "#4F46E5";
+
+    return (
+      <div style={{
+        minHeight: "100vh",
+        background: "#F5F4FF",
+        fontFamily: "'Pretendard', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif",
+        display: "flex", flexDirection: "column",
+      }}>
+        {/* 상단 진행 바 */}
+        <div style={{
+          position: "sticky", top: 0, zIndex: 10,
+          background: "#fff", borderBottom: "1px solid #EDE9FE",
+          padding: "14px 24px",
+        }}>
+          <div style={{ maxWidth: 560, margin: "0 auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <span style={{ fontSize: 13, color: "#6B7280" }}>벨빈 팀 역할 진단</span>
+              <span style={{ fontSize: 13, color: ACCENT, fontWeight: 700 }}>
+                {currentIdx + 1} / {totalQ}
+              </span>
+            </div>
+            <div style={{ height: 5, background: "#EDE9FE", borderRadius: 99, overflow: "hidden" }}>
+              <div style={{
+                height: "100%",
+                background: `linear-gradient(90deg, #6366F1, #818CF8)`,
+                borderRadius: 99,
+                width: `${progressPct}%`,
+                transition: "width 0.4s ease",
+              }} />
+            </div>
+          </div>
+        </div>
+
+        {/* 문항 영역 */}
+        <div style={{
+          flex: 1, maxWidth: 560, margin: "0 auto", width: "100%",
+          padding: "40px 20px 0",
+          display: "flex", flexDirection: "column",
+        }}>
+          {/* 번호 */}
+          <div style={{ marginBottom: 20 }}>
+            <span style={{
+              background: "#EDE9FE", color: ACCENT,
+              fontSize: 12, fontWeight: 700,
+              borderRadius: 8, padding: "4px 12px",
+              letterSpacing: 0.5,
+            }}>
+              Q {currentIdx + 1}
+            </span>
+          </div>
+
+          {/* 문항 텍스트 */}
+          <p style={{
+            color: "#1E1B4B", fontSize: 18, fontWeight: 600,
+            lineHeight: 1.7, marginBottom: 44,
+            minHeight: 80,
+          }}>
+            {currentQ.text}
+          </p>
+
+          {/* 리커트 선택 */}
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+              {[1, 2, 3, 4, 5].map(score => (
+                <button
+                  key={score}
+                  onClick={() => handleAnswer(score)}
+                  style={{
+                    flex: 1, padding: "14px 0",
+                    borderRadius: 12,
+                    border: `1.5px solid ${selected === score ? ACCENT : "#DDD9F8"}`,
+                    background: selected === score ? ACCENT : "#fff",
+                    color: selected === score ? "#fff" : "#6B7280",
+                    fontSize: 16, fontWeight: selected === score ? 700 : 500,
+                    cursor: "pointer", transition: "all 0.15s",
+                    boxShadow: selected === score ? `0 4px 14px #4F46E540` : "none",
+                  }}
+                >
+                  {score}
+                </button>
+              ))}
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span style={{ fontSize: 11, color: "#B0B8CC" }}>전혀 아니다</span>
+              <span style={{ fontSize: 11, color: "#B0B8CC" }}>매우 그렇다</span>
+            </div>
+          </div>
+
+          {/* 이전 버튼만 표시 (선택 시 자동으로 다음 문항 이동) */}
+          <div style={{ display: "flex", gap: 10, paddingTop: 32, paddingBottom: 52 }}>
+            {currentIdx > 0 && (
+              <button
+                onClick={handlePrev}
+                style={{
+                  flex: "0 0 auto", padding: "15px 20px",
+                  borderRadius: 14, border: "1.5px solid #DDD9F8",
+                  background: "#fff", color: "#6B7280",
+                  fontSize: 15, fontWeight: 600, cursor: "pointer",
+                }}
+              >
+                ← 이전
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── RESULT ──────────────────────────────────────────────────
+  if (page === "result") {
+    const synergyRoles = getSynergyRoles(activeRole.synergy);
+    const isPrimary = (s) => primaryRoles.some(r => r.id === s.id);
+
+    return (
+      <div style={{
+        minHeight: "100vh",
+        background: "#F5F4FF",
+        fontFamily: "'Pretendard', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif",
+      }}>
+        {/* 히어로 */}
+        <div style={{
+          background: `linear-gradient(150deg, #1E1B4B 0%, ${activeRole.color} 100%)`,
+          padding: "52px 24px 44px",
+          textAlign: "center",
+          transition: "background 0.4s",
+        }}>
+          <p style={{ color: "#C7D2FE", fontSize: 11, letterSpacing: 4, textTransform: "uppercase", marginBottom: 20 }}>
+            {isMultiple ? `나의 공동 주 역할 (${primaryRoles.length}가지)` : "나의 팀 역할은"}
+          </p>
+
+          {/* 동점 탭 */}
+          {isMultiple && (
+            <div style={{
+              display: "flex", justifyContent: "center", gap: 8, marginBottom: 28, flexWrap: "wrap",
+            }}>
+              {primaryRoles.map((role, i) => (
+                <button
+                  key={role.id}
+                  onClick={() => setActiveRoleIdx(i)}
+                  style={{
+                    padding: "7px 18px", borderRadius: 99,
+                    border: `1.5px solid ${activeRoleIdx === i ? "#fff" : "rgba(255,255,255,0.35)"}`,
+                    background: activeRoleIdx === i ? "rgba(255,255,255,0.22)" : "transparent",
+                    color: activeRoleIdx === i ? "#fff" : "rgba(255,255,255,0.65)",
+                    fontSize: 13, fontWeight: activeRoleIdx === i ? 700 : 400,
+                    cursor: "pointer", transition: "all 0.2s",
+                  }}
+                >
+                  {role.emoji} {role.name}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div style={{ marginBottom: 8, display: "flex", justifyContent: "center" }}>
+            {CHAR_IMAGES[activeRole.id] ? (
+              <img
+                src={CHAR_IMAGES[activeRole.id]}
+                alt={activeRole.name}
+                style={{
+                  width: 220, height: 220,
+                  objectFit: "contain",
+                  filter: "drop-shadow(0 8px 24px rgba(0,0,0,0.3))",
+                  transition: "all 0.3s",
+                }}
+              />
+            ) : (
+              <div style={{ fontSize: 68, lineHeight: 1 }}>{activeRole.emoji}</div>
+            )}
+          </div>
+          <h1 style={{ color: "#fff", fontSize: 30, fontWeight: 800, marginBottom: 6 }}>
+            {activeRole.name}
+          </h1>
+          <p style={{ color: "#E0E7FF", fontSize: 13, marginBottom: 16 }}>{activeRole.en}</p>
+          <p style={{ color: "#C7D2FE", fontSize: 14, lineHeight: 1.75, maxWidth: 300, margin: "0 auto" }}>
+            {activeRole.tagline}
+          </p>
+
+          {/* 동점 안내 문구 */}
+          {isMultiple && (
+            <div style={{
+              marginTop: 24,
+              background: "rgba(255,255,255,0.12)",
+              borderRadius: 12, padding: "12px 20px",
+              maxWidth: 340, marginLeft: "auto", marginRight: "auto",
+            }}>
+              <p style={{ color: "#E0E7FF", fontSize: 12, lineHeight: 1.7 }}>
+                {primaryRoles.length === 2
+                  ? "두 가지 역할이 거의 동등하게 나타났어요."
+                  : primaryRoles.length === 3
+                  ? "세 가지 역할이 거의 동등하게 나타났어요."
+                  : `${primaryRoles.length}가지 역할이 거의 동등하게 나타났어요.`
+                }<br />
+                {primaryRoles.length === 2
+                  ? "상황에 따라 두 역할을 유연하게 오가는 유형입니다."
+                  : "상황에 따라 여러 역할을 유연하게 오가는 유형입니다."
+                }
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div style={{ maxWidth: 600, margin: "0 auto", padding: "28px 18px" }}>
+
+          {/* 소개 */}
+          <div style={{
+            background: "#fff", borderRadius: 18, padding: "22px",
+            marginBottom: 16,
+            border: `1.5px solid ${activeRole.color}25`,
+            boxShadow: `0 2px 20px ${activeRole.color}10`,
+          }}>
+            <p style={{ color: "#374151", fontSize: 14.5, lineHeight: 1.85 }}>
+              {activeRole.description}
+            </p>
+          </div>
+
+          {/* 레이더 차트 */}
+          <div style={{
+            background: "#fff", borderRadius: 18, padding: "22px 12px 16px",
+            marginBottom: 16, border: "1.5px solid #EDE9FE",
+          }}>
+            <h3 style={{ color: "#1E1B4B", fontSize: 14, fontWeight: 700, marginBottom: 4, textAlign: "center" }}>
+              역할별 점수 분포
+            </h3>
+            <p style={{ color: "#9CA3AF", fontSize: 11, textAlign: "center", marginBottom: 16 }}>
+              각 역할의 최고점은 20점입니다
+            </p>
+            <ResponsiveContainer width="100%" height={260}>
+              <RadarChart data={radarData}>
+                <PolarGrid stroke="#EDE9FE" />
+                <PolarAngleAxis dataKey="role" tick={{ fontSize: 11, fill: "#6B7280" }} />
+                <PolarRadiusAxis domain={[0, 20]} tick={false} axisLine={false} />
+                <Radar
+                  dataKey="점수"
+                  stroke={activeRole.color}
+                  fill={activeRole.color}
+                  fillOpacity={0.18}
+                  strokeWidth={2}
+                />
+              </RadarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* 강점 */}
+          <div style={{
+            background: "#fff", borderRadius: 18, padding: "22px",
+            marginBottom: 14, border: "1.5px solid #EDE9FE",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 18 }}>
+              <span style={{ fontSize: 22 }}>💪</span>
+              <h3 style={{ color: "#1E1B4B", fontSize: 15, fontWeight: 700 }}>나의 강점</h3>
+            </div>
+            {activeRole.strengths.map((s, i) => (
+              <div key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start", marginBottom: 12 }}>
+                <div style={{
+                  width: 24, height: 24, borderRadius: "50%",
+                  background: `${activeRole.color}18`, color: activeRole.color,
+                  fontSize: 11, fontWeight: 800,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  flexShrink: 0, marginTop: 1,
+                }}>
+                  {i + 1}
+                </div>
+                <p style={{ color: "#374151", fontSize: 14, lineHeight: 1.7 }}>{s}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* 더 챙겨볼 부분 */}
+          <div style={{
+            background: "#fff", borderRadius: 18, padding: "22px",
+            marginBottom: 14, border: "1.5px solid #EDE9FE",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 18 }}>
+              <span style={{ fontSize: 22 }}>🌿</span>
+              <h3 style={{ color: "#1E1B4B", fontSize: 15, fontWeight: 700 }}>더 챙겨볼 부분</h3>
+            </div>
+            {activeRole.growth.map((g, i) => (
+              <div key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start", marginBottom: 12 }}>
+                <div style={{
+                  width: 7, height: 7, borderRadius: "50%",
+                  background: "#F59E0B", flexShrink: 0, marginTop: 8,
+                }} />
+                <p style={{ color: "#374151", fontSize: 14, lineHeight: 1.7 }}>{g}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* 시너지 유형 */}
+          <div style={{
+            background: "#fff", borderRadius: 18, padding: "22px",
+            marginBottom: 14, border: "1.5px solid #EDE9FE",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 18 }}>
+              <span style={{ fontSize: 22 }}>✨</span>
+              <h3 style={{ color: "#1E1B4B", fontSize: 15, fontWeight: 700 }}>함께하면 시너지가 나는 유형</h3>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {synergyRoles.map(role => (
+                <div key={role.id} style={{
+                  background: `${role.color}0E`,
+                  border: `1.5px solid ${role.color}35`,
+                  borderRadius: 14, padding: "16px 16px",
+                  display: "flex", alignItems: "flex-start", gap: 14,
+                }}>
+                  <div style={{ flexShrink: 0, textAlign: "center", minWidth: 56 }}>
+                    <div style={{ fontSize: 28, marginBottom: 4 }}>{role.emoji}</div>
+                    <div style={{ color: role.color, fontSize: 11, fontWeight: 800 }}>{role.name}</div>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ color: "#1E1B4B", fontSize: 12, fontWeight: 700, marginBottom: 6 }}>
+                      왜 시너지가 날까?
+                    </div>
+                    <p style={{ color: "#4B5563", fontSize: 13, lineHeight: 1.65 }}>
+                      {role.reason}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* 전체 점수 */}
+          <div style={{
+            background: "#fff", borderRadius: 18, padding: "22px",
+            marginBottom: 28, border: "1.5px solid #EDE9FE",
+          }}>
+            <h3 style={{ color: "#1E1B4B", fontSize: 15, fontWeight: 700, marginBottom: 18 }}>
+              전체 역할 점수
+            </h3>
+            {sortedScores.map((s) => (
+              <div key={s.id} style={{ marginBottom: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                    <span style={{ fontSize: 14 }}>{s.emoji}</span>
+                    <span style={{ fontSize: 13, color: "#374151", fontWeight: isPrimary(s) ? 700 : 400 }}>
+                      {s.name}
+                    </span>
+                    {isPrimary(s) && (
+                      <span style={{
+                        background: `${s.color}18`, color: s.color,
+                        fontSize: 10, fontWeight: 700,
+                        borderRadius: 6, padding: "1px 7px",
+                      }}>
+                        {isMultiple ? "공동 주 역할" : "주 역할"}
+                      </span>
+                    )}
+                  </div>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: isPrimary(s) ? s.color : "#9CA3AF" }}>
+                    {s.score} / 20
+                  </span>
+                </div>
+                <div style={{ height: 6, background: "#F3F4F6", borderRadius: 99, overflow: "hidden" }}>
+                  <div style={{
+                    height: "100%",
+                    background: isPrimary(s) ? `linear-gradient(90deg, #4338CA, ${s.color})` : "#D1D5DB",
+                    borderRadius: 99,
+                    width: `${(s.score / 20) * 100}%`,
+                    transition: "width 0.8s ease",
+                  }} />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* 저장 상태 */}
+          {teamCode.trim() && (
+            <p style={{ textAlign: "center", fontSize: 12, color: "#9CA3AF", marginBottom: 12 }}>
+              {submitStatus === "saving" && "팀 결과 저장 중..."}
+              {submitStatus === "saved" && `✓ "${teamCode}" 팀에 결과가 저장되었어요`}
+              {submitStatus === "error" && "저장에 실패했어요. 네트워크를 확인해주세요."}
+            </p>
+          )}
+
+          {/* 팀 결과 보기 */}
+          {teamCode.trim() && (
+            <button
+              onClick={() => { setPage("team-result"); fetchTeamResults(teamCode); }}
+              style={{
+                width: "100%", padding: "15px",
+                borderRadius: 14, border: "none",
+                background: "linear-gradient(135deg, #4338CA, #6366F1)",
+                color: "#fff", fontSize: 15, fontWeight: 700,
+                cursor: "pointer", marginBottom: 12,
+                boxShadow: "0 4px 20px #4338CA40",
+              }}
+            >
+              👥 우리 팀 결과 보기
+            </button>
+          )}
+
+          {/* 개인+팀 결과 저장 */}
+          {teamCode.trim() && (
+            <button
+              onClick={goToReport}
+              style={{
+                width: "100%", padding: "15px",
+                borderRadius: 14, border: "1.5px solid #4338CA",
+                background: "#fff", color: "#4338CA",
+                fontSize: 15, fontWeight: 700,
+                cursor: "pointer", marginBottom: 12,
+              }}
+            >
+              📎 개인+팀 결과 리포트 저장
+            </button>
+          )}
+
+          {/* 다시하기 */}
+          <button
+            onClick={resetAll}
+            style={{
+              width: "100%", padding: "15px",
+              borderRadius: 14, border: "1.5px solid #DDD9F8",
+              background: "#fff", color: "#4338CA",
+              fontSize: 15, fontWeight: 600,
+              cursor: "pointer", marginBottom: 48,
+              transition: "background 0.15s",
+            }}
+            onMouseEnter={e => e.target.style.background = "#F5F4FF"}
+            onMouseLeave={e => e.target.style.background = "#fff"}
+          >
+            ↺ 다시 진단하기
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── REPORT (개인+팀 결과 저장) ───────────────────────────────
+  if (page === "report") {
+    const synergyRoles = getSynergyRoles(activeRole.synergy);
+    const isPrimary = (s) => primaryRoles.some(r => r.id === s.id);
+
+    const roleCounts = {};
+    ROLES.forEach(r => { roleCounts[r.id] = 0; });
+    (teamResults || []).forEach(member => {
+      (member.primaryRoles || []).forEach(roleName => {
+        const role = ROLES.find(r => r.name === roleName);
+        if (role) roleCounts[role.id] += 1;
+      });
+    });
+    const teamChartData = ROLES.map(r => ({
+      id: r.id, name: r.name, emoji: r.emoji, color: r.color, count: roleCounts[r.id],
+    }));
+    const totalAssignments = teamChartData.reduce((sum, d) => sum + d.count, 0) || 1;
+    const pieData = teamChartData.filter(d => d.count > 0);
+
+    return (
+      <div style={{
+        minHeight: "100vh",
+        background: "#F5F4FF",
+        fontFamily: "'Pretendard', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif",
+      }}>
+        <div style={{ maxWidth: 600, margin: "0 auto", padding: "24px 18px" }}>
+
+          {/* 상단 안내 (캡처 영역 제외) */}
+          <div style={{ textAlign: "center", marginBottom: 20 }}>
+            <h2 style={{ color: "#1E1B4B", fontSize: 18, fontWeight: 800, marginBottom: 6 }}>
+              📎 결과 리포트
+            </h2>
+            <p style={{ color: "#6B7280", fontSize: 13 }}>
+              개인 결과와 팀 결과를 한 장으로 모았어요. 저장해서 공유해보세요.
+            </p>
+          </div>
+
+          {/* ↓↓↓ 캡처 대상 영역 (이미지/PDF로 저장됨) ↓↓↓ */}
+          <div ref={reportRef} style={{ background: "#fff", borderRadius: 18, padding: "24px", border: "1.5px solid #EDE9FE" }}>
+
+            <div style={{ textAlign: "center", marginBottom: 24 }}>
+              <div style={{
+                fontSize: 20, fontWeight: 900, letterSpacing: 1,
+                background: "linear-gradient(180deg, #4338CA, #818CF8)",
+                WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
+                marginBottom: 4,
+              }}>One Team</div>
+              <p style={{ color: "#9CA3AF", fontSize: 11 }}>벨빈 팀 역할 진단 리포트</p>
+            </div>
+
+            {/* 개인 결과 */}
+            <div style={{ marginBottom: 28, paddingBottom: 24, borderBottom: "2px dashed #EDE9FE" }}>
+              <h3 style={{ color: "#4338CA", fontSize: 13, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", marginBottom: 14 }}>
+                👤 개인 결과 — {userName || "참가자"}
+              </h3>
+              <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16 }}>
+                {CHAR_IMAGES[activeRole.id] && (
+                  <img src={CHAR_IMAGES[activeRole.id]} alt={activeRole.name} style={{ width: 90, height: 90, objectFit: "contain", flexShrink: 0 }} />
+                )}
+                <div>
+                  <p style={{ fontSize: 11, color: "#9CA3AF", marginBottom: 2 }}>
+                    {isMultiple ? `공동 주 역할 (${primaryRoles.length}가지)` : "주 역할"}
+                  </p>
+                  <h1 style={{ color: "#1E1B4B", fontSize: 22, fontWeight: 800, marginBottom: 2 }}>
+                    {primaryRoles.map(r => r.name).join(" · ")}
+                  </h1>
+                  <p style={{ color: "#6B7280", fontSize: 12 }}>{activeRole.tagline}</p>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 16 }}>
+                <ResponsiveContainer width="100%" height={220}>
+                  <RadarChart data={radarData}>
+                    <PolarGrid stroke="#EDE9FE" />
+                    <PolarAngleAxis dataKey="role" tick={{ fontSize: 10, fill: "#6B7280" }} />
+                    <PolarRadiusAxis domain={[0, 20]} tick={false} axisLine={false} />
+                    <Radar dataKey="점수" stroke={activeRole.color} fill={activeRole.color} fillOpacity={0.18} strokeWidth={2} />
+                  </RadarChart>
+                </ResponsiveContainer>
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <p style={{ fontSize: 12, fontWeight: 700, color: "#1E1B4B", marginBottom: 6 }}>💪 강점</p>
+                {activeRole.strengths.slice(0, 2).map((s, i) => (
+                  <p key={i} style={{ fontSize: 12, color: "#374151", lineHeight: 1.6, marginBottom: 3 }}>· {s}</p>
+                ))}
+              </div>
+
+              <div>
+                <p style={{ fontSize: 12, fontWeight: 700, color: "#1E1B4B", marginBottom: 6 }}>✨ 시너지 유형</p>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {synergyRoles.map(role => (
+                    <span key={role.id} style={{
+                      fontSize: 11, fontWeight: 700, color: role.color,
+                      background: `${role.color}18`, borderRadius: 6, padding: "3px 8px",
+                    }}>
+                      {role.emoji} {role.name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* 팀 결과 */}
+            <div>
+              <h3 style={{ color: "#4338CA", fontSize: 13, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", marginBottom: 14 }}>
+                👥 팀 결과 — {teamCode}
+              </h3>
+              {teamLoading && (
+                <p style={{ textAlign: "center", color: "#9CA3AF", fontSize: 13, padding: "24px 0" }}>팀 데이터 불러오는 중...</p>
+              )}
+              {!teamLoading && teamResults && teamResults.length > 0 && (
+                <React.Fragment>
+                  <p style={{ fontSize: 12, color: "#9CA3AF", marginBottom: 10 }}>
+                    {teamResults.length}명 참여 · 역할별 인원 분포
+                  </p>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <PieChart>
+                      <Pie
+                        data={pieData}
+                        dataKey="count"
+                        nameKey="name"
+                        cx="50%" cy="50%"
+                        innerRadius={48}
+                        outerRadius={82}
+                        paddingAngle={3}
+                        label={({ name, value }) => `${name} ${Math.round((value / totalAssignments) * 100)}%`}
+                        labelLine={{ stroke: "#D1D5DB" }}
+                      >
+                        {pieData.map((d, i) => <Cell key={i} fill={d.color} />)}
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+                    {teamChartData.filter(d => d.count > 0).map(d => (
+                      <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        {CHAR_IMAGES[d.id] && (
+                          <img src={CHAR_IMAGES[d.id]} alt={d.name} style={{ width: 22, height: 22, objectFit: "contain" }} />
+                        )}
+                        <span style={{ flex: 1, fontSize: 12, color: "#374151" }}>{d.name}</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: d.color }}>
+                          {d.count}명 ({Math.round((d.count / totalAssignments) * 100)}%)
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </React.Fragment>
+              )}
+              {!teamLoading && teamResults && teamResults.length === 0 && (
+                <p style={{ textAlign: "center", color: "#9CA3AF", fontSize: 13, padding: "24px 0" }}>
+                  아직 팀 데이터가 없어요.
+                </p>
+              )}
+            </div>
+          </div>
+          {/* ↑↑↑ 캡처 대상 영역 끝 ↑↑↑ */}
+
+          {/* 저장 버튼 (캡처 영역 제외) */}
+          <div style={{ display: "flex", gap: 10, marginTop: 20, marginBottom: 12 }}>
+            <button
+              onClick={saveAsImage}
+              disabled={isExporting}
+              style={{
+                flex: 1, padding: "15px", borderRadius: 14, border: "none",
+                background: isExporting ? "#E5E7EB" : "linear-gradient(135deg, #4338CA, #6366F1)",
+                color: isExporting ? "#9CA3AF" : "#fff",
+                fontSize: 14, fontWeight: 700, cursor: isExporting ? "not-allowed" : "pointer",
+              }}
+            >
+              {isExporting ? "저장 중..." : "🖼️ 이미지로 저장"}
+            </button>
+            <button
+              onClick={saveAsPDF}
+              disabled={isExporting}
+              style={{
+                flex: 1, padding: "15px", borderRadius: 14,
+                border: "1.5px solid #4338CA",
+                background: "#fff", color: "#4338CA",
+                fontSize: 14, fontWeight: 700, cursor: isExporting ? "not-allowed" : "pointer",
+              }}
+            >
+              {isExporting ? "저장 중..." : "📄 PDF로 저장"}
+            </button>
+          </div>
+
+          <button
+            onClick={() => setPage("result")}
+            style={{
+              width: "100%", padding: "14px",
+              borderRadius: 14, border: "1.5px solid #DDD9F8",
+              background: "#fff", color: "#6B7280",
+              fontSize: 14, fontWeight: 600, cursor: "pointer", marginBottom: 40,
+            }}
+          >
+            ← 결과 화면으로
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── TEAM RESULT ─────────────────────────────────────────────
+  if (page === "team-result") {
+    const roleCounts = {};
+    ROLES.forEach(r => { roleCounts[r.id] = 0; });
+    (teamResults || []).forEach(member => {
+      (member.primaryRoles || []).forEach(roleName => {
+        const role = ROLES.find(r => r.name === roleName);
+        if (role) roleCounts[role.id] += 1;
+      });
+    });
+    const teamChartData = ROLES.map(r => ({
+      id: r.id, name: r.name, emoji: r.emoji, color: r.color, count: roleCounts[r.id],
+    }));
+    const totalAssignments = teamChartData.reduce((sum, d) => sum + d.count, 0) || 1;
+    const pieData = teamChartData.filter(d => d.count > 0);
+
+    return (
+      <div style={{
+        minHeight: "100vh",
+        background: "#F5F4FF",
+        fontFamily: "'Pretendard', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif",
+      }}>
+        <div style={{
+          background: "linear-gradient(150deg, #1E1B4B 0%, #4338CA 100%)",
+          padding: "44px 24px 36px", textAlign: "center",
+        }}>
+          <p style={{ color: "#C7D2FE", fontSize: 11, letterSpacing: 3, textTransform: "uppercase", marginBottom: 10 }}>
+            TEAM RESULT
+          </p>
+          <h1 style={{ color: "#fff", fontSize: 24, fontWeight: 800, marginBottom: 6 }}>
+            👥 우리 팀은 어떤 세포들로 이루어졌을까?
+          </h1>
+          {teamResults && (
+            <p style={{ color: "#C7D2FE", fontSize: 13 }}>
+              팀 코드 "{teamLookupCode}" · {teamResults.length}명 참여
+            </p>
+          )}
+        </div>
+
+        <div style={{ maxWidth: 600, margin: "0 auto", padding: "24px 18px 60px" }}>
+
+          {/* 팀 코드 조회 폼 */}
+          <div style={{
+            background: "#fff", borderRadius: 18, padding: "18px",
+            marginBottom: 18, border: "1.5px solid #EDE9FE",
+            display: "flex", gap: 8,
+          }}>
+            <input
+              value={teamLookupCode}
+              onChange={e => setTeamLookupCode(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") fetchTeamResults(teamLookupCode); }}
+              placeholder="팀 코드 입력"
+              style={{
+                flex: 1, padding: "12px 14px", borderRadius: 10,
+                border: "1.5px solid #DDD9F8", fontSize: 14, outline: "none",
+              }}
+            />
+            <button
+              onClick={() => fetchTeamResults(teamLookupCode)}
+              style={{
+                padding: "12px 20px", borderRadius: 10, border: "none",
+                background: "#4338CA", color: "#fff", fontWeight: 700,
+                fontSize: 14, cursor: "pointer",
+              }}
+            >
+              조회
+            </button>
+          </div>
+
+          {teamLoading && (
+            <p style={{ textAlign: "center", color: "#6B7280", fontSize: 14, padding: "40px 0" }}>
+              불러오는 중...
+            </p>
+          )}
+
+          {teamError && (
+            <p style={{ textAlign: "center", color: "#DC2626", fontSize: 14, padding: "20px 0" }}>
+              {teamError}
+            </p>
+          )}
+
+          {teamResults && teamResults.length === 0 && !teamLoading && (
+            <p style={{ textAlign: "center", color: "#6B7280", fontSize: 14, padding: "40px 0" }}>
+              아직 이 팀 코드로 저장된 결과가 없어요.
+            </p>
+          )}
+
+          {teamResults && teamResults.length > 0 && (
+            <React.Fragment>
+              {/* 종합: 역할별 인원 분포 도넛 차트 */}
+              <div style={{
+                background: "#fff", borderRadius: 18, padding: "20px",
+                marginBottom: 16, border: "1.5px solid #EDE9FE",
+              }}>
+                <h3 style={{ color: "#1E1B4B", fontSize: 15, fontWeight: 700, marginBottom: 4 }}>
+                  📊 종합 - 역할별 인원 분포
+                </h3>
+                <p style={{ color: "#9CA3AF", fontSize: 11, marginBottom: 8 }}>
+                  우리 팀은 어떤 역할이 많은지 한눈에 확인하세요
+                </p>
+                <ResponsiveContainer width="100%" height={260}>
+                  <PieChart>
+                    <Pie
+                      data={pieData}
+                      dataKey="count"
+                      nameKey="name"
+                      cx="50%" cy="50%"
+                      innerRadius={55}
+                      outerRadius={95}
+                      paddingAngle={3}
+                      label={({ name, value }) => `${name} ${Math.round((value / totalAssignments) * 100)}%`}
+                      labelLine={{ stroke: "#D1D5DB" }}
+                    >
+                      {pieData.map((d, i) => (
+                        <Cell key={i} fill={d.color} />
+                      ))}
+                    </Pie>
+                  </PieChart>
+                </ResponsiveContainer>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 8 }}>
+                  {teamChartData.map(d => {
+                    const pct = Math.round((d.count / totalAssignments) * 100);
+                    return (
+                      <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        {CHAR_IMAGES[d.id] ? (
+                          <img
+                            src={CHAR_IMAGES[d.id]}
+                            alt={d.name}
+                            style={{
+                              width: 30, height: 30, objectFit: "contain",
+                              opacity: d.count > 0 ? 1 : 0.3,
+                              filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.2))",
+                            }}
+                          />
+                        ) : (
+                          <span style={{ fontSize: 18 }}>{d.emoji}</span>
+                        )}
+                        <span style={{ flex: 1, fontSize: 13, color: d.count > 0 ? "#374151" : "#C4C9D4" }}>
+                          {d.name}
+                        </span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: d.count > 0 ? d.color : "#C4C9D4" }}>
+                          {d.count}명 ({pct}%)
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 상세: 팀원 명단 */}
+              <div style={{
+                background: "#fff", borderRadius: 18, padding: "20px",
+                marginBottom: 16, border: "1.5px solid #EDE9FE",
+              }}>
+                <h3 style={{ color: "#1E1B4B", fontSize: 15, fontWeight: 700, marginBottom: 16 }}>
+                  🔍 상세 - 팀원별 역할
+                </h3>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {teamResults.map((member, idx) => {
+                    const memberRoles = (member.primaryRoles || [])
+                      .map(name => ROLES.find(r => r.name === name))
+                      .filter(Boolean);
+                    const isOpen = expandedMember === idx;
+                    return (
+                      <div key={idx} style={{
+                        border: "1.5px solid #EDE9FE", borderRadius: 12, overflow: "hidden",
+                      }}>
+                        <button
+                          onClick={() => setExpandedMember(isOpen ? null : idx)}
+                          style={{
+                            width: "100%", padding: "12px 14px",
+                            background: isOpen ? "#F5F4FF" : "#fff",
+                            border: "none", cursor: "pointer",
+                            display: "flex", alignItems: "center", justifyContent: "space-between",
+                          }}
+                        >
+                          <span style={{ fontSize: 14, fontWeight: 600, color: "#1E1B4B" }}>
+                            {member.name}
+                          </span>
+                          <span style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                            {memberRoles.map(r => (
+                              <span key={r.id} style={{
+                                fontSize: 11, fontWeight: 700, color: r.color,
+                                background: `${r.color}18`, borderRadius: 6,
+                                padding: "2px 8px",
+                              }}>
+                                {r.emoji} {r.name}
+                              </span>
+                            ))}
+                          </span>
+                        </button>
+                        {isOpen && (
+                          <div style={{ padding: "12px 14px", background: "#FAFAFF", borderTop: "1px solid #EDE9FE" }}>
+                            {ROLES.map(r => (
+                              <div key={r.id} style={{ marginBottom: 8 }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                                  <span style={{ fontSize: 12, color: "#374151" }}>{r.emoji} {r.name}</span>
+                                  <span style={{ fontSize: 11, color: "#9CA3AF" }}>{member.scores[r.id]} / 20</span>
+                                </div>
+                                <div style={{ height: 6, background: "#EEE", borderRadius: 99, overflow: "hidden" }}>
+                                  <div style={{
+                                    height: "100%",
+                                    width: `${(member.scores[r.id] / 20) * 100}%`,
+                                    background: r.color, borderRadius: 99,
+                                  }} />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </React.Fragment>
+          )}
+
+          <button
+            onClick={() => setPage("intro")}
+            style={{
+              width: "100%", padding: "15px",
+              borderRadius: 14, border: "1.5px solid #DDD9F8",
+              background: "#fff", color: "#4338CA",
+              fontSize: 15, fontWeight: 600, cursor: "pointer",
+            }}
+          >
+            ← 처음으로
+          </button>
+        </div>
+      </div>
+    );
+  }
+}
+
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<BelbinDiagnosis />);
+  </script>
+</body>
+</html>
